@@ -23,7 +23,7 @@ String output27State = "off";
 // Assign output variables to GPIO pins
 const int output26 = 26;
 const int output27 = 27;
-const int irLed = 23;
+const int irLed = 23; // IR LED 950 nm
 
 // Current time
 unsigned long currentTime = millis();
@@ -59,11 +59,9 @@ volatile boolean sendIRFlag = false;
 const byte MAX_COMMAND_BYTE_LENGTH = 15;
 
 volatile byte command[15] = {0x28, 0xC6, 0x0, 0x8, 0x8, 0x3F, 0x10, 0xC, 0x86, 0x80, 0x80, 0x0, 0x0, 0x0, 0xB6};  // Comando de prueba
-volatile byte commandByteLength = 15;
-volatile byte bitMask = 0B10000000; // The most significant bit will be first to transmit.
-volatile byte actualByte = 0;
-volatile byte actualBitCounter = 7;
-volatile byte actualBitValue = 0; // The actual bit value.
+volatile byte commandByteLength = 15; // Length of the command to be sent in bytes.
+volatile byte bitMask = 0B10000000; // The most significant bit of each byte will be sent first.
+volatile byte actualByte = 0; // Keeps the count of the actualByte in the transmision.
 
 volatile byte onTimerTickCounterPerBit = 0; // Indicates the number of ticks of onCounter per single bit. When a bit ends this variable equals to 0.
 
@@ -76,7 +74,6 @@ volatile boolean pwmOnFlag = true;
 void IRAM_ATTR onTimer() {
   portENTER_CRITICAL(&synch);
   if (sendIRFlag) {
-    byte b = command[actualByte];
     if (sendStartBitFlag) {
       if (pwmOnFlag) {
         if (onTimerTickCounterPerBit == 0) {
@@ -151,13 +148,29 @@ void IRAM_ATTR onTimer() {
         }
       }
       if (actualByte >= commandByteLength) {
-        sendIRFlag = false;
-        sendStartBitFlag = true;
-        bitMask = 0B10000000; // The most significant bit will be first to transmit.
-        actualByte = 0;
-        actualBitCounter = 7;
-        actualBitValue = 0; // The actual bit value.
-        pwmOnFlag = true; // prepare the pwmFlag for the next bit,
+        // Sends the stop bit.
+        if (onTimerTickCounterPerBit == 0) {
+          ledcWrite(pwmLedChannel, pwmDuttyCycle); // Enables PWM output.
+          pwmOnFlag = true;
+          onTimerTickCounterPerBit++;
+        }
+        else if(onTimerTickCounterPerBit == 1){
+          ledcWrite(pwmLedChannel, 0); // Disables the pwm output.
+          pwmOnFlag = false;
+          onTimerTickCounterPerBit++;
+        }
+        else if(onTimerTickCounterPerBit > 1 && onTimerTickCounterPerBit < 10){
+          onTimerTickCounterPerBit++;
+        }
+        // When stop bit is sended
+        else if(onTimerTickCounterPerBit == 10){
+          onTimerTickCounterPerBit = 0;
+          sendIRFlag = false;
+          sendStartBitFlag = true;
+          bitMask = 0B10000000; // The most significant bit will be first to transmit.
+          actualByte = 0;
+          pwmOnFlag = true; // prepare the pwmFlag for the next bit,
+        }
       }
     }
   }
@@ -180,7 +193,7 @@ void setup() {
   xTaskCreatePinnedToCore(
     wiffiLoop,      // Function to implement the task
     "wiffiTask",    // Name of the task
-    1024,           // Stack size in words
+    2048,           // Stack size in words
     NULL,           // Task input parameter
     0,              // Priority of the task, the higher the more priority.
     &task_wiffi,    // Task Handle
@@ -239,15 +252,16 @@ void ioLoop(void * parameter) {
 
   // Needs to be here, infinite loop.
   while (1) {
-    if(!sendIRFlag){
-      if(digitalRead(19) == HIGH){
+    if (!sendIRFlag) {
+      if (digitalRead(19) == HIGH) {
         vTaskDelay(50 / portTICK_RATE_MS); // Wait 50ms
-        if(digitalRead(19) == HIGH);
+        if (digitalRead(19) == HIGH);
         sendIRFlag = true;
+        while (digitalRead(19) == HIGH);
       }
     }
-    else{
-        
+    else {
+
     }
     vTaskDelay(10 / portTICK_RATE_MS); // Wait 10ms.
   }
