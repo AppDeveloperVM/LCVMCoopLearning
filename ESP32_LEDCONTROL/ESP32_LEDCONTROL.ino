@@ -454,8 +454,6 @@ String findVarFromPost(String postVarName, String postInfo) {
   byte startIndex = postInfo.indexOf(postVarName);
   byte endIndex = postInfo.indexOf("&", startIndex + 1);
   String result = "";
-
-  Serial.print("\nstartIndex = "); Serial.print(startIndex); Serial.print("\t endIndex = "); Serial.println(endIndex);
   
   if (startIndex >= 0) {
     if (endIndex >= 0) {
@@ -465,7 +463,11 @@ String findVarFromPost(String postVarName, String postInfo) {
       result = postInfo.substring(startIndex + postVarName.length());
     }
   }
+  
+  Serial.print("\nVarName: "); Serial.println(postVarName.substring(1,postVarName.length()-1)); 
+  Serial.print("startIndex = "); Serial.print(startIndex); Serial.print("\t endIndex = "); Serial.println(endIndex);
   Serial.print("return: "); Serial.println(result);
+  
   return result;
 }
 
