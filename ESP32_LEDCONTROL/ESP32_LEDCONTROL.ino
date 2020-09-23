@@ -7,8 +7,8 @@
 #include <WiFi.h>
 
 // Replace with your network credentials
-const char* ssid = "**************";
-const char* password = "**************";
+const char* ssid = "*************";
+const char* password = "*************";
 
 // Set web server port number to 80
 WiFiServer server(350);
@@ -338,6 +338,7 @@ void wiffiLoop(void * parameter) {
                   else{
                     swing = false;
                   }
+                  
                 }
               }
 
@@ -399,11 +400,11 @@ void wiffiLoop(void * parameter) {
 
               client.println("<label for=\"fanCtrl\">FUN CONTROL:</label>");
               client.println("<select name=\"fanCtrl\" id=\"fanCtrl\">");
-              client.print("<option value=\"AUTO\"");  if (masterControl.equals("AUTO"))  client.print(" selected "); client.println(">AUTO</option>");
-              client.print("<option value=\"HIGH\"");  if (masterControl.equals("HIGH"))  client.print(" selected "); client.println(">COOL</option>");
-              client.print("<option value=\"MED\"");   if (masterControl.equals("MED"))   client.print(" selected "); client.println(">DRY</option>");
-              client.print("<option value=\"LOW\"");   if (masterControl.equals("LOW"))   client.print(" selected "); client.println(">FAN</option>");
-              client.print("<option value=\"QUIET\""); if (masterControl.equals("QUIET")) client.print(" selected "); client.println(">HEAT</option>");
+              client.print("<option value=\"AUTO\"");  if (fanControl.equals("AUTO"))  client.print(" selected "); client.println(">AUTO</option>");
+              client.print("<option value=\"HIGH\"");  if (fanControl.equals("HIGH"))  client.print(" selected "); client.println(">HIGH</option>");
+              client.print("<option value=\"MED\"");   if (fanControl.equals("MED"))   client.print(" selected "); client.println(">MED</option>");
+              client.print("<option value=\"LOW\"");   if (fanControl.equals("LOW"))   client.print(" selected "); client.println(">LOW</option>");
+              client.print("<option value=\"QUIET\""); if (fanControl.equals("QUIET")) client.print(" selected "); client.println(">QUIET</option>");
               client.println("</select>");
 
               client.println("<br></br>");
