@@ -25,6 +25,14 @@ const int output26 = 26;
 const int output27 = 27;
 const int irLed = 23; // IR LED 950 nm
 
+// AC variables. (This variables are AC specific)
+byte temperatura = 22;
+String masterControl = "AUTO";
+String fanControl = "AUTO";
+boolean powerOn = false;
+boolean swing = false;
+byte air_direction = 0;
+
 // Current time
 unsigned long currentTime = millis();
 // Previous time
@@ -154,16 +162,16 @@ void IRAM_ATTR onTimer() {
           pwmOnFlag = true;
           onTimerTickCounterPerBit++;
         }
-        else if(onTimerTickCounterPerBit == 1){
+        else if (onTimerTickCounterPerBit == 1) {
           ledcWrite(pwmLedChannel, 0); // Disables the pwm output.
           pwmOnFlag = false;
           onTimerTickCounterPerBit++;
         }
-        else if(onTimerTickCounterPerBit > 1 && onTimerTickCounterPerBit < 10){
+        else if (onTimerTickCounterPerBit > 1 && onTimerTickCounterPerBit < 10) {
           onTimerTickCounterPerBit++;
         }
         // When stop bit is sended
-        else if(onTimerTickCounterPerBit == 10){
+        else if (onTimerTickCounterPerBit == 10) {
           onTimerTickCounterPerBit = 0;
           sendIRFlag = false;
           sendStartBitFlag = true;
@@ -286,8 +294,53 @@ void wiffiLoop(void * parameter) {
           header += c;
           if (c == '\n') {                    // if the byte is a newline character
             // if the current line is blank, you got two newline characters in a row.
-            // that's the end of the client HTTP request, so send a response:
+            // that's the end of the head in the HTTP request.
             if (currentLine.length() == 0) {
+
+              // We must check if there is more info in the client request. (body part of the request)
+              if (client.available()) {
+                String postInfo = "";
+                while (client.available()) {
+                  c = client.read();
+                  postInfo += c;
+                  Serial.write(c);
+                }
+                if (header.indexOf("POST / HTTP/1.1") >= 0) {
+
+                  // Update the values of the variables
+                  String postVarValue = findVarFromPost("temp", postInfo);
+                  if(!postVarValue.equals("")){
+                    temperatura = postVarValue.toInt();
+                  }
+                  
+                  postVarValue = findVarFromPost("masterCtrl", postInfo);
+                  if(!postVarValue.equals("")){
+                    masterControl = postVarValue;
+                  }
+                  
+                  postVarValue = findVarFromPost("fanCtrl", postInfo);
+                  if(!postVarValue.equals("")){
+                    fanControl = postVarValue;
+                  }
+
+                  postVarValue = findVarFromPost("powerOn", postInfo);
+                  if(!postVarValue.equals("")){
+                    powerOn = true;
+                  }
+                  else{
+                    powerOn = false;
+                  }
+
+                  postVarValue = findVarFromPost("swing", postInfo);
+                  if(!postVarValue.equals("")){
+                    swing = true;
+                  }
+                  else{
+                    swing = false;
+                  }
+                }
+              }
+
               // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
               // and a content-type so the client knows what's coming, then a blank line:
               client.println("HTTP/1.1 200 OK");
@@ -295,62 +348,81 @@ void wiffiLoop(void * parameter) {
               client.println("Connection: close");
               client.println();
 
-              // turns the GPIOs on and off
-              if (header.indexOf("GET /26/on") >= 0) {
-                Serial.println("GPIO 26 on");
-                output26State = "on";
-                digitalWrite(output26, HIGH);
-              } else if (header.indexOf("GET /26/off") >= 0) {
-                Serial.println("GPIO 26 off");
-                output26State = "off";
-                digitalWrite(output26, LOW);
-              } else if (header.indexOf("GET /27/on") >= 0) {
-                Serial.println("GPIO 27 on");
-                output27State = "on";
-                digitalWrite(output27, HIGH);
-              } else if (header.indexOf("GET /27/off") >= 0) {
-                Serial.println("GPIO 27 off");
-                output27State = "off";
-                digitalWrite(output27, LOW);
-              }
-
               // Display the HTML web page
               client.println("<!DOCTYPE html><html>");
-              client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
-              client.println("<link rel=\"icon\" href=\"data:,\">");
-              // CSS to style the on/off buttons
-              // Feel free to change the background-color and font-size attributes to fit your preferences
-              client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
-              client.println(".button { background-color: #4CAF50; border: none; color: white; padding: 16px 40px;");
-              client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
-              client.println(".button2 {background-color: #555555;}</style></head>");
+              client.println("<title>ESP32 AC web server</title>");
+              //------------------- HEAD -------------------
+              client.println("<head>");
+              //------------------- STYLE -------------------
+              client.println("<style>");
+              // ----- Style inputs -----
+              client.println("input[type=text],input[type=number],select{width: 50%; padding: 12px 20px;margin: 8px 0; display:inline-block;border: 1px solid #ccc;border-radius: 4px;box-sizing: border-box;}");
+              // ----- Style the submit button -----
+              client.println("input[type=submit] {width: 50%; background-color: #4CAF50; color: white; padding: 14px 20px; margin: 8px 0; border: none; border-radius: 4px; cursor: pointer;}");
+              // ----- Add a background color to the submit button on mouse-over -----
+              client.println("input[type=submit]:hover {background-color: #45a049;");
+              client.println(".ck-button {margin:4px; background-color:#EFEFEF; border-radius:4px; border:1px solid #D0D0D0; overflow:auto; float:left;}");
+              client.println(".ck-button:hover {background:rgb(9, 110, 40);}");
+              client.println(".ck-button label {float:left;width:4.0em;}");
+              client.println(".ck-button label span {text-align:center; padding:3px 0px; display:block;}");
+              client.println(".ck-button label input { position:absolute; top:-20px;}");
+              client.println(".ck-button input:checked + span { background-color:rgb(28, 153, 17); color:#fff;}");
+              client.println("</style>");
+              // ------------------- END STYLE -------------------
 
-              // Web Page Heading
-              client.println("<body><h1>ESP32 Web Server</h1>");
+              // ------------------- SCRIPT -------------------
+              client.println("<script> function setInputs() {");
+              // Time vars
+              client.println("var today = new Date(); var time = today.getHours() + \": \" + today.getMinutes() ; // + \": \" + today.getSeconds()");
+              // get variable defaults.
+              client.println("document.getElementById(\"time\").value = time;");
+              client.print("document.getElementById(\"temp\").defaultValue = "); client.print(temperatura); client.println(";");
+              client.println("}</script>");
+              // ----------------- END SCRIPT -----------------
 
-              // Display current state, and ON/OFF buttons for GPIO 26
-              client.println("<p>GPIO 26 - State " + output26State + "</p>");
-              // If the output26State is off, it displays the ON button
-              if (output26State == "off") {
-                client.println("<p><a href=\"/26/on\"><button class=\"button\">ON</button></a></p>");
-              } else {
-                client.println("<p><a href=\"/26/off\"><button class=\"button button2\">OFF</button></a></p>");
-              }
+              client.println("</head>");
+              // ----------------- END HEAD -----------------
+              // ------------------- BODY -------------------
+              client.println("<body onload=\"setInputs()\">");
+              client.println("<form  method=\"POST\"><br><strong>ESP32 AC WEB SERVER</strong></br><label for=\"time\">TIME:</label><input type=\"text\" id=\"time\" name=\"time\" placeholder=\"time\"> <br></br> <label for=\"temp\">TEMPERATURA:</label> <input type=\"number\" id=\"temp\" name=\"temp\" placeholder=\"temp\"> <br></br>");
 
-              // Display current state, and ON/OFF buttons for GPIO 27
-              client.println("<p>GPIO 27 - State " + output27State + "</p>");
-              // If the output27State is off, it displays the ON button
-              if (output27State == "off") {
-                client.println("<p><a href=\"/27/on\"><button class=\"button\">ON</button></a></p>");
-              } else {
-                client.println("<p><a href=\"/27/off\"><button class=\"button button2\">OFF</button></a></p>");
-              }
-              client.println("</body></html>");
+              client.println("<label for=\"masterCtrl\">MASTER CONTROL:</label>");
+              client.println("<select name=\"masterCtrl\" id=\"masterCtrl\">");
+              client.print("<option value=\"AUTO\""); if (masterControl.equals("AUTO")) client.print(" selected "); client.println(">AUTO</option>");
+              client.print("<option value=\"COOL\""); if (masterControl.equals("COOL")) client.print(" selected "); client.println(">COOL</option>");
+              client.print("<option value=\"DRY\"");  if (masterControl.equals("DRY"))  client.print(" selected "); client.println(">DRY</option>");
+              client.print("<option value=\"FAN\"");  if (masterControl.equals("FAN"))  client.print(" selected "); client.println(">FAN</option>");
+              client.print("<option value=\"HEAT\""); if (masterControl.equals("HEAT")) client.print(" selected "); client.println(">HEAT</option>");
+              client.println("</select>");
+
+              client.println("<br></br>");
+
+              client.println("<label for=\"fanCtrl\">FUN CONTROL:</label>");
+              client.println("<select name=\"fanCtrl\" id=\"fanCtrl\">");
+              client.print("<option value=\"AUTO\"");  if (masterControl.equals("AUTO"))  client.print(" selected "); client.println(">AUTO</option>");
+              client.print("<option value=\"HIGH\"");  if (masterControl.equals("HIGH"))  client.print(" selected "); client.println(">COOL</option>");
+              client.print("<option value=\"MED\"");   if (masterControl.equals("MED"))   client.print(" selected "); client.println(">DRY</option>");
+              client.print("<option value=\"LOW\"");   if (masterControl.equals("LOW"))   client.print(" selected "); client.println(">FAN</option>");
+              client.print("<option value=\"QUIET\""); if (masterControl.equals("QUIET")) client.print(" selected "); client.println(">HEAT</option>");
+              client.println("</select>");
+
+              client.println("<br></br>");
+              client.println("<div class=\"ck-button\"><label><input type=\"checkbox\" id=\"powerOn\" name=\"powerOn\" class=\"ck-button\" value=\"ON\""); if(powerOn) client.print(" checked"); client.println("><span>POWER ON</span></label></div>");
+              client.println("<div class=\"ck-button\"><label><input type=\"checkbox\" id=\"swing\" name=\"swing\" class=\"ck-button\" value=\"ON\""); if(swing) client.print(" checked"); client.println("><span>Swing</span></label></div>");
+              client.println("<div class=\"ck-button\"><label><input type=\"checkbox\" id=\"air_direction\" name=\"air_direction\" class=\"ck-button\" value=\"1\"><span>air direction</span> </label></div><br>");
+
+              client.println("<input type=\"submit\" name=\"submit\">");
+              client.println("</form>");
+              // ---------------------------- END OF BODY ----------------------------
+              client.println("</body>");
+              // ---------------------------- END OF HTML ----------------------------
+              client.println("</html>");
 
               // The HTTP response ends with another blank line
               client.println();
               // Break out of the while loop
               break;
+
             } else { // if you got a newline, then clear currentLine
               currentLine = "";
             }
@@ -375,29 +447,26 @@ void loop() {
   vTaskDelete(NULL); // Delete this task.
 }
 
-// ####################### IO FUNCTIONS (In future this will be a library for suporting different protocols) #######################
+// ####################### FUNCTIONS #######################
 
-// ------------- "HIGH LEVEL FUNCTIONS" -------------
-void sendStartBit() {
-  transmit(3285, 1600);
-}
+String findVarFromPost(String postVarName, String postInfo) {
+  postVarName = "&" + postVarName + "="; 
+  byte startIndex = postInfo.indexOf(postVarName);
+  byte endIndex = postInfo.indexOf("&", startIndex + 1);
+  String result = "";
 
-void sendBit(unsigned int bit) {
-  switch (bit) {
-    // Sends the "0" bit.
-    case 0:
-      transmit(400, 400);
-      break;
-
-    // Sends the "1" bit.
-    case 1:
-      transmit(400, 1210);
-      break;
+  Serial.print("\nstartIndex = "); Serial.print(startIndex); Serial.print("\t endIndex = "); Serial.println(endIndex);
+  
+  if (startIndex >= 0) {
+    if (endIndex >= 0) {
+      result = postInfo.substring(startIndex + postVarName.length(), endIndex);
+    }
+    else {
+      result = postInfo.substring(startIndex + postVarName.length());
+    }
   }
+  Serial.print("return: "); Serial.println(result);
+  return result;
 }
 
-// ------------- "MEDIUM LEVEL FUNCTIONS" -------------
-void transmit(unsigned long onTime, unsigned long offTime) {
-  ledcWrite(pwmLedChannel, pwmDuttyCycle);
-  ledcWrite(pwmLedChannel, 0);
-}
+// ####################### IO FUNCTIONS (In future this will be a library for suporting different protocols) #######################
