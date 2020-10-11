@@ -7,31 +7,27 @@
 #include <WiFi.h>
 
 // Replace with your network credentials
-const char* ssid = "*************";
-const char* password = "*************";
+const char* ssid = "**************";
+const char* password = "**************";
 
-// Set web server port number to 80
+const int irLed = 23; // IR LED 950 nm
+
+// Set web server port number to 350
 WiFiServer server(350);
 
 // Variable to store the HTTP request
 String header;
-
-// Auxiliar variables to store the current output state
-String output26State = "off";
-String output27State = "off";
-
-// Assign output variables to GPIO pins
-const int output26 = 26;
-const int output27 = 27;
-const int irLed = 23; // IR LED 950 nm
 
 // AC variables. (This variables are AC specific)
 byte temperatura = 22;
 String masterControl = "AUTO";
 String fanControl = "AUTO";
 boolean powerOn = false;
-boolean swing = false;
+boolean swingState = false; // Indicates the state of the swing in the AC. True if swing is on, false if swing is off.
+boolean swingChangedFlag = false; // Indicates that swingState is changed.
 byte air_direction = 0;
+
+SemaphoreHandle_t varUpdate_Semaphore; // Sempaphore for sync tasks.
 
 // Current time
 unsigned long currentTime = millis();
@@ -51,9 +47,9 @@ TaskHandle_t task_io;
 // ############## Variables for task_io ############## (This will be inside the library in the future)
 
 // setting PWM properties
-const int pwmFreq = 38000;   // PWM frecuency: 38 KHz
-const int pwmLedChannel = 0; // PWM chanel: 0
-const int pwmResolution = 8; // PWM resolution: 8 bits
+const int pwmFreq = 38000;      // PWM frecuency: 38 KHz
+const int pwmLedChannel = 0;    // PWM chanel: 0
+const int pwmResolution = 8;    // PWM resolution: 8 bits
 const int pwmDuttyCycle = 127;  // PWM dutty cycle (127 = 50% because 8 bits PWM, MAX_VALUE = 255).
 
 //#####################################################
@@ -70,6 +66,8 @@ volatile byte command[15] = {0x28, 0xC6, 0x0, 0x8, 0x8, 0x3F, 0x10, 0xC, 0x86, 0
 volatile byte commandByteLength = 15; // Length of the command to be sent in bytes.
 volatile byte bitMask = 0B10000000; // The most significant bit of each byte will be sent first.
 volatile byte actualByte = 0; // Keeps the count of the actualByte in the transmision.
+volatile byte actualBit = 0;  // Keps the count of the actualBit in the transmision.
+volatile byte commandBitLength = 120; // Keeps the bitCount
 
 volatile byte onTimerTickCounterPerBit = 0; // Indicates the number of ticks of onCounter per single bit. When a bit ends this variable equals to 0.
 
@@ -189,13 +187,8 @@ void setup() {
   Serial.begin(115200);
   // Initialize the output variables as outputs
   pinMode(irLed, OUTPUT);
-  pinMode(16, INPUT);
-  pinMode(output26, OUTPUT);
-  pinMode(output27, OUTPUT);
   // Set outputs to LOW
   digitalWrite(irLed, LOW);
-  digitalWrite(output26, LOW);
-  digitalWrite(output27, LOW);
 
   // Task in core 0.
   xTaskCreatePinnedToCore(
@@ -242,31 +235,17 @@ void ioLoop(void * parameter) {
   // attach the channel to the GPIO to be controlled
   ledcAttachPin(irLed, pwmLedChannel);
 
-  /* Use 1st timer of 4 */
-  /* 1 tick take 1/(CPU_FREQ_SECONDS/CPU_FREQ_MHZ) = 1us so we set divider ESP.getCpuFreqMHz() and count up */
-  timer_ir = timerBegin(0, 80, true);
-
-  /* Attach onTimer function to our timer */
-  timerAttachInterrupt(timer_ir, &onTimer, true);
-
-  /* Set alarm to call onTimer function every 408us, 1 tick is 1us
-    /* Repeat the alarm (third parameter) */
-  timerAlarmWrite(timer_ir, 408, true);
+  startTimer();
 
   delay(500);
 
-  /* Start an alarm */
-  timerAlarmEnable(timer_ir);
-
   // Needs to be here, infinite loop.
   while (1) {
+
+    //xSemaphoreTake(varUpdate_Semaphore, portMAX_DELAY); // Waits until the semaphore is free.
+
     if (!sendIRFlag) {
-      if (digitalRead(19) == HIGH) {
-        vTaskDelay(50 / portTICK_RATE_MS); // Wait 50ms
-        if (digitalRead(19) == HIGH);
-        sendIRFlag = true;
-        while (digitalRead(19) == HIGH);
-      }
+
     }
     else {
 
@@ -308,37 +287,17 @@ void wiffiLoop(void * parameter) {
                 if (header.indexOf("POST / HTTP/1.1") >= 0) {
 
                   // Update the values of the variables
-                  String postVarValue = findVarFromPost("temp", postInfo);
-                  if(!postVarValue.equals("")){
-                    temperatura = postVarValue.toInt();
-                  }
-                  
-                  postVarValue = findVarFromPost("masterCtrl", postInfo);
-                  if(!postVarValue.equals("")){
-                    masterControl = postVarValue;
-                  }
-                  
-                  postVarValue = findVarFromPost("fanCtrl", postInfo);
-                  if(!postVarValue.equals("")){
-                    fanControl = postVarValue;
+                  commandByteLength = findVarFromPost("byteLenght", postInfo).toInt();
+                  commandBitLength = findVarFromPost("bitNumber", postInfo).toInt();
+
+                  for(int i=0; i<commandByteLength; i++){
+                    String varName = "b"+String(i);
+                    command[i] = findVarFromPost(varName, postInfo).toInt();
                   }
 
-                  postVarValue = findVarFromPost("powerOn", postInfo);
-                  if(!postVarValue.equals("")){
-                    powerOn = true;
-                  }
-                  else{
-                    powerOn = false;
-                  }
+                  sendIRFlag = true;  // borrar
 
-                  postVarValue = findVarFromPost("swing", postInfo);
-                  if(!postVarValue.equals("")){
-                    swing = true;
-                  }
-                  else{
-                    swing = false;
-                  }
-                  
+                  //xSemaphoreGive(varUpdate_Semaphore); // Releases the semaphore
                 }
               }
 
@@ -346,6 +305,9 @@ void wiffiLoop(void * parameter) {
               // and a content-type so the client knows what's coming, then a blank line:
               client.println("HTTP/1.1 200 OK");
               client.println("Content-type:text/html");
+              client.println("Access-Control-Allow-Origin: *");
+              client.println("Access-Control-Allow-Methods: GET,POST,OPTIONS");
+              client.println("Access-Control-Allow-Headers: Content-Type");
               client.println("Connection: close");
               client.println();
 
@@ -408,8 +370,8 @@ void wiffiLoop(void * parameter) {
               client.println("</select>");
 
               client.println("<br></br>");
-              client.println("<div class=\"ck-button\"><label><input type=\"checkbox\" id=\"powerOn\" name=\"powerOn\" class=\"ck-button\" value=\"ON\""); if(powerOn) client.print(" checked"); client.println("><span>POWER ON</span></label></div>");
-              client.println("<div class=\"ck-button\"><label><input type=\"checkbox\" id=\"swing\" name=\"swing\" class=\"ck-button\" value=\"ON\""); if(swing) client.print(" checked"); client.println("><span>Swing</span></label></div>");
+              client.println("<div class=\"ck-button\"><label><input type=\"checkbox\" id=\"powerOn\" name=\"powerOn\" class=\"ck-button\" value=\"ON\""); if (powerOn) client.print(" checked"); client.println("><span>POWER ON</span></label></div>");
+              client.println("<div class=\"ck-button\"><label><input type=\"checkbox\" id=\"swing\" name=\"swing\" class=\"ck-button\" value=\"ON\""); if (swingState) client.print(" checked"); client.println("><span>Swing</span></label></div>");
               client.println("<div class=\"ck-button\"><label><input type=\"checkbox\" id=\"air_direction\" name=\"air_direction\" class=\"ck-button\" value=\"1\"><span>air direction</span> </label></div><br>");
 
               client.println("<input type=\"submit\" name=\"submit\">");
@@ -451,11 +413,11 @@ void loop() {
 // ####################### FUNCTIONS #######################
 
 String findVarFromPost(String postVarName, String postInfo) {
-  postVarName = "&" + postVarName + "="; 
+  postVarName = postVarName + "=";
   byte startIndex = postInfo.indexOf(postVarName);
   byte endIndex = postInfo.indexOf("&", startIndex + 1);
   String result = "";
-  
+
   if (startIndex >= 0) {
     if (endIndex >= 0) {
       result = postInfo.substring(startIndex + postVarName.length(), endIndex);
@@ -464,12 +426,34 @@ String findVarFromPost(String postVarName, String postInfo) {
       result = postInfo.substring(startIndex + postVarName.length());
     }
   }
-  
-  Serial.print("\nVarName: "); Serial.println(postVarName.substring(1,postVarName.length()-1)); 
+
+  Serial.print("\nVarName: "); Serial.println(postVarName.substring(0, postVarName.length() - 1));
   Serial.print("startIndex = "); Serial.print(startIndex); Serial.print("\t endIndex = "); Serial.println(endIndex);
   Serial.print("return: "); Serial.println(result);
-  
+
   return result;
+}
+
+void startTimer() {
+  /* Use 1st timer of 4 */
+  /* 1 tick take 1/(CPU_FREQ_SECONDS/CPU_FREQ_MHZ) = 1us so we set divider ESP.getCpuFreqMHz() and count up */
+  timer_ir = timerBegin(0, 80, true);
+
+  /* Attach onTimer function to our timer */
+  timerAttachInterrupt(timer_ir, &onTimer, true);
+
+  /* Set alarm to call on function every 408us, 1 tick is 1us
+    /* Repeat the alarm (third parameter) */
+  timerAlarmWrite(timer_ir, 408, true);
+
+  /* Start an alarm */
+  timerAlarmEnable(timer_ir);
+}
+
+void stopTimer() {
+  timerAlarmDisable(timer_ir); // stop alarm
+  timerDetachInterrupt(timer_ir); // detach interrupt
+  timerEnd(timer_ir); // end timer
 }
 
 // ####################### IO FUNCTIONS (In future this will be a library for suporting different protocols) #######################
