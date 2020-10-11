@@ -1,30 +1,11 @@
 # LCVMCoopLearning
- Luis and Víc personal repository
+Luis and Víc personal repository
  
 Ejemplo de lo que se envia en el cuerpo de un POST.
 
-time=4%3A+55&temp=65&masterCtrl=COOL&fanCtrl=AUTO&powerOn=ON&swing=ON&air_direction=1&submit=Enviar
+bitNumber=120&byteLength=15&b0=40&b1=198&b2=0&b3=8&b4=8&b5=63&b6=16&b7=12&b8=14&b9=128&b10=0&b11=0&b12=0&b13=0&b14=250&
 
--> Siempre se envian por el post:
-time = Tiempo actual.
+bitNumber: Especifica el numero de bits que contiene la trama.
+byteLength: Especifica el numero de bytes que contiene la trama.
 
-&temp = temperatura. Valores posibles: de 18 a 31 grados en todos los modos. De 16 a 31 unicamente en modo HEAT.
-
-&masterCtrl = masterControl. Modos (valores posibles): "AUTO", "COOL", "DRY", "FAN", "HEAT".
-
-&fanCtrl= fanControl. Modos (valores posibles): "AUTO", "HIGH", "MED", "LOW", "QUIET".
-
--> Se envian solo si estan pulsadas (checked): 
-(En realidad puedes enciar el valor que quieras, ya que solo se comprueba si se ha enviado la variable o no.)
-
-powerOn = Botton de POWER ON. Solo se envia la variable si esta "checked"
-
-&swing = Botton de SWING. Solo se envia la variable si esta "checked"
-
-&air_direction botton de AIR DIRECTION. Solo se envia la variable si esta "checked"
-
--> Variables que siempre se envian pero que aun no les he dado uso.
-
-&time = Tiempo actual desde que se hizo la petición al server.
-
-&submit Se envia por el boton del formulario. Nose si en la app tambien se envia.
+*Nota: Falta implementar 6 variables mas, en un futuro se implementarán.
